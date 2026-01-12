@@ -6,45 +6,18 @@ import {
   RoomStatus,
   MultiplayerGameState,
 } from "../types/game";
-import { getGameStatus } from "../utils/gameLogic";
+import {
+  getGameStatus,
+  createEmptyBoard,
+  applyMoveToBoard,
+} from "../utils/gameLogic";
+import { getStoredPlayerRole, storePlayerRole } from "../utils/playerStorage";
+import {
+  assignRoleByCreatorStatus,
+  assignRoleByMemberOrder,
+} from "../utils/roleAssignment";
 import { usePusherChannel } from "./usePusherChannel";
 import toast from "react-hot-toast";
-
-const createEmptyBoard = (): Board => [
-  [null, null, null],
-  [null, null, null],
-  [null, null, null],
-];
-
-const STORAGE_KEY_PREFIX = "tictactoe_player_";
-
-/**
- * Gets stored player role for a room
- */
-function getStoredPlayerRole(roomId: string): PlayerRole {
-  if (typeof window === "undefined") return null;
-  const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${roomId}`);
-  return (stored === "X" || stored === "O" ? stored : null) as PlayerRole;
-}
-
-/**
- * Stores player role for a room
- */
-function storePlayerRole(roomId: string, role: PlayerRole): void {
-  if (typeof window === "undefined") return;
-  if (role) {
-    localStorage.setItem(`${STORAGE_KEY_PREFIX}${roomId}`, role);
-  } else {
-    localStorage.removeItem(`${STORAGE_KEY_PREFIX}${roomId}`);
-  }
-}
-
-/**
- * Randomly assigns X or O
- */
-function assignRandomRole(): PlayerRole {
-  return Math.random() < 0.5 ? "X" : "O";
-}
 
 export function useMultiplayerGame(roomId: string | null) {
   const [board, setBoard] = useState<Board>(createEmptyBoard());
@@ -97,16 +70,15 @@ export function useMultiplayerGame(roomId: string | null) {
       let newRole: PlayerRole;
       if (isRoomCreatorRef.current === true) {
         // We created the room, we're X
-        newRole = "X";
+        newRole = assignRoleByCreatorStatus(true);
       } else if (isRoomCreatorRef.current === false) {
         // We joined the room, we're O
-        newRole = "O";
+        newRole = assignRoleByCreatorStatus(false);
       } else {
         // Fallback: if we can't determine, use member order
         const memberIds = Object.keys(members?.members || {});
         if (memberIds.length < 2) return; // Need 2 players
 
-        const sortedIds = memberIds.sort();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const myUserId =
           (members?.me as any)?.id ||
@@ -115,14 +87,14 @@ export function useMultiplayerGame(roomId: string | null) {
               (channelRef as any).members.me?.id
             : null);
 
-        if (myUserId) {
-          const myIndex = sortedIds.indexOf(myUserId);
-          newRole = myIndex === 0 ? "X" : "O";
+        const roleFromOrder = assignRoleByMemberOrder(memberIds, myUserId);
+        if (roleFromOrder) {
+          newRole = roleFromOrder;
           // Update creator ref based on role
-          isRoomCreatorRef.current = myIndex === 0;
+          isRoomCreatorRef.current = roleFromOrder === "X";
         } else {
-          // Last resort: assign randomly
-          newRole = assignRandomRole();
+          // Last resort: default to O if we can't determine
+          newRole = "O";
         }
       }
 
@@ -248,10 +220,11 @@ export function useMultiplayerGame(roomId: string | null) {
         // Apply opponent's move
         if (data.player !== playerRole) {
           setBoard((prev) => {
-            const newBoard: Board = prev.map((r, rIdx) =>
-              r.map((cell, cIdx) =>
-                rIdx === data.row && cIdx === data.col ? data.player : cell
-              )
+            const newBoard = applyMoveToBoard(
+              prev,
+              data.row,
+              data.col,
+              data.player
             );
             const newStatus = getGameStatus(newBoard);
             if (newStatus.status === "won" || newStatus.status === "draw") {
@@ -328,11 +301,7 @@ export function useMultiplayerGame(roomId: string | null) {
       }
 
       // Make the move
-      const newBoard: Board = board.map((r, rIdx) =>
-        r.map((cell, cIdx) =>
-          rIdx === row && cIdx === col ? playerRole : cell
-        )
-      );
+      const newBoard = applyMoveToBoard(board, row, col, playerRole);
 
       setBoard(newBoard);
       setRoomStatus("playing");

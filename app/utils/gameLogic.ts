@@ -1,17 +1,28 @@
 import { Board, Player, GameStatus } from "../types/game";
 
 /**
- * Converts 2D board coordinates to flat index (0-8)
+ * Creates an empty 3x3 tic-tac-toe board
  */
-function getFlatIndex(row: number, col: number): number {
-  return row * 3 + col;
+export function createEmptyBoard(): Board {
+  return [
+    [null, null, null],
+    [null, null, null],
+    [null, null, null],
+  ];
 }
 
 /**
- * Converts flat index (0-8) to 2D board coordinates
+ * Applies a move to the board and returns a new board
  */
-function getCoordinates(index: number): { row: number; col: number } {
-  return { row: Math.floor(index / 3), col: index % 3 };
+export function applyMoveToBoard(
+  board: Board,
+  row: number,
+  col: number,
+  player: Player
+): Board {
+  return board.map((r, rIdx) =>
+    r.map((cell, cIdx) => (rIdx === row && cIdx === col ? player : cell))
+  );
 }
 
 /**
@@ -70,9 +81,11 @@ export function isBoardFull(board: Board): boolean {
 /**
  * Determines the game status based on the board state
  */
-export function getGameStatus(
-  board: Board
-): { status: GameStatus; winner: Player; winningCells: number[] } {
+export function getGameStatus(board: Board): {
+  status: GameStatus;
+  winner: Player;
+  winningCells: number[];
+} {
   const winnerResult = checkWinner(board);
   if (winnerResult) {
     return {

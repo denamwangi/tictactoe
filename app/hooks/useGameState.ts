@@ -1,12 +1,10 @@
 import { useState, useCallback } from "react";
 import { Board, Player, GameState, GameScores } from "../types/game";
-import { getGameStatus } from "../utils/gameLogic";
-
-const createEmptyBoard = (): Board => [
-  [null, null, null],
-  [null, null, null],
-  [null, null, null],
-];
+import {
+  getGameStatus,
+  createEmptyBoard,
+  applyMoveToBoard,
+} from "../utils/gameLogic";
 
 /**
  * Randomly selects who starts first (X or O)
@@ -41,9 +39,7 @@ export function useGameState() {
       }
 
       // Make the move
-      const newBoard: Board = board.map((r, rIdx) =>
-        r.map((cell, cIdx) => (rIdx === row && cIdx === col ? currentPlayer : cell))
-      );
+      const newBoard = applyMoveToBoard(board, row, col, currentPlayer);
 
       setBoard(newBoard);
 
