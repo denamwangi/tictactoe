@@ -15,7 +15,6 @@ import {
 } from "../utils/userState";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import type { PresenceChannel } from "pusher-js";
 
 export function useMatchmaking() {
   const router = useRouter();
