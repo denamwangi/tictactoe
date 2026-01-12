@@ -55,6 +55,7 @@ export function useMultiplayerGame(roomId: string | null) {
   const [currentPlayer, setCurrentPlayer] = useState<Player>(null);
   const gameStartedRef = useRef(false);
   const roleAssignedRef = useRef(false);
+  const isRoomCreatorRef = useRef<boolean | null>(null); // Track if we created the room
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const triggerRef = useRef<((event: string, data: any) => void) | null>(null);
 
@@ -74,14 +75,16 @@ export function useMultiplayerGame(roomId: string | null) {
 
   // Initialize game when both players are present
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const initializeGame = useCallback((members: any, channelRef?: any, triggerFn?: any) => {
+  const initializeGame = useCallback(
+    (members: any, channelRef?: any, triggerFn?: any) => {
       if (!roomId) return;
 
       // Check if we already have a role from storage
       if (playerRole && roleAssignedRef.current) {
         // We have a role, just start the game
         setRoomStatus("ready");
-        const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
+        // Creator (X) always goes first
+        const startingPlayer: Player = "X";
         setCurrentPlayer(startingPlayer);
         if (triggerFn) {
           triggerFn("game-start", { startingPlayer });
@@ -90,29 +93,37 @@ export function useMultiplayerGame(roomId: string | null) {
         return;
       }
 
-      // Assign roles: use member IDs to deterministically assign X and O
-      const memberIds = Object.keys(members?.members || {});
-      if (memberIds.length < 2) return; // Need 2 players
-
-      const sortedIds = memberIds.sort();
-
-      // Get our user ID from members.me or channel
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const myUserId =
-        (members?.me as any)?.id ||
-        (channelRef && "members" in channelRef
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ? (channelRef as any).members.me?.id
-          : null);
-
+      // Assign roles: room creator (first player) gets X, second player gets O
       let newRole: PlayerRole;
-      if (!myUserId) {
-        // Fallback: assign randomly if we can't determine user ID
-        newRole = assignRandomRole();
+      if (isRoomCreatorRef.current === true) {
+        // We created the room, we're X
+        newRole = "X";
+      } else if (isRoomCreatorRef.current === false) {
+        // We joined the room, we're O
+        newRole = "O";
       } else {
-        // Assign based on sorted order: first gets X, second gets O
-        const myIndex = sortedIds.indexOf(myUserId);
-        newRole = myIndex === 0 ? "X" : "O";
+        // Fallback: if we can't determine, use member order
+        const memberIds = Object.keys(members?.members || {});
+        if (memberIds.length < 2) return; // Need 2 players
+
+        const sortedIds = memberIds.sort();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const myUserId =
+          (members?.me as any)?.id ||
+          (channelRef && "members" in channelRef
+            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (channelRef as any).members.me?.id
+            : null);
+
+        if (myUserId) {
+          const myIndex = sortedIds.indexOf(myUserId);
+          newRole = myIndex === 0 ? "X" : "O";
+          // Update creator ref based on role
+          isRoomCreatorRef.current = myIndex === 0;
+        } else {
+          // Last resort: assign randomly
+          newRole = assignRandomRole();
+        }
       }
 
       if (!playerRole && !roleAssignedRef.current) {
@@ -126,8 +137,8 @@ export function useMultiplayerGame(roomId: string | null) {
 
       setRoomStatus("ready");
 
-      // Randomly decide who starts (only trigger once)
-      const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
+      // Creator (X) always goes first
+      const startingPlayer: Player = "X";
       setCurrentPlayer(startingPlayer);
       // Set to playing immediately for the player who triggers (they don't always receive their own client event)
       setRoomStatus("playing");
@@ -147,6 +158,12 @@ export function useMultiplayerGame(roomId: string | null) {
       // members.count is available in presence channels
       const count = members?.count || 0;
       setPlayerCount(count);
+
+      // Determine if we're the room creator (first player)
+      if (isRoomCreatorRef.current === null) {
+        isRoomCreatorRef.current = count === 1; // If count is 1, we're the creator
+      }
+
       if (count === 2) {
         setOpponentConnected(true);
         // If both players are already present when we subscribe, start the game
@@ -162,6 +179,13 @@ export function useMultiplayerGame(roomId: string | null) {
       // Get accurate count from the channel passed to callback
       const count = channelRef?.members?.count || 0;
       setPlayerCount(count);
+
+      // Determine if we're the room creator (first player) if not already set
+      if (isRoomCreatorRef.current === null) {
+        // If we see count go from 1 to 2, we were the first (creator)
+        // If we see count === 2 when we first join, we're the second (joiner)
+        isRoomCreatorRef.current = playerCount === 1 && count === 2;
+      }
 
       if (count === 2) {
         setOpponentConnected(true);
@@ -190,6 +214,7 @@ export function useMultiplayerGame(roomId: string | null) {
         setOpponentConnected(false);
         gameStartedRef.current = false;
         roleAssignedRef.current = false;
+        isRoomCreatorRef.current = null; // Reset creator status
         if (roomStatus === "playing" || roomStatus === "ready") {
           setRoomStatus("waiting");
           toast.error("Opponent disconnected");
@@ -242,7 +267,8 @@ export function useMultiplayerGame(roomId: string | null) {
 
     const unbindReset = bindEvent("client-reset", () => {
       setBoard(createEmptyBoard());
-      const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
+      // Creator (X) always goes first
+      const startingPlayer: Player = "X";
       setCurrentPlayer(startingPlayer);
       setRoomStatus("playing");
       trigger("game-start", { startingPlayer });
@@ -331,7 +357,8 @@ export function useMultiplayerGame(roomId: string | null) {
 
   const resetGame = useCallback(() => {
     setBoard(createEmptyBoard());
-    const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
+    // Creator (X) always goes first
+    const startingPlayer: Player = "X";
     setCurrentPlayer(startingPlayer);
     setRoomStatus("playing");
     trigger("reset", {});
