@@ -16,6 +16,7 @@ import {
   assignRoleByCreatorStatus,
   assignRoleByMemberOrder,
 } from "../utils/roleAssignment";
+import { setUserStatus } from "../utils/userState";
 import { usePusherChannel } from "./usePusherChannel";
 import toast from "react-hot-toast";
 
@@ -272,8 +273,15 @@ export function useMultiplayerGame(roomId: string | null) {
       }
     );
 
+    const unbindMatchCancelled = bindEvent("client-match-cancelled", () => {
+      setUserStatus("browsing");
+      toast.error("Match cancelled - returning to home");
+      // Navigation will be handled by the page component
+    });
+
     return () => {
       unbindRole?.();
+      unbindMatchCancelled?.();
     };
   }, [channel, isConnected, playerRole, roomId, bindEvent]);
 

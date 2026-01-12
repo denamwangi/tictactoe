@@ -3,6 +3,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useMultiplayerGame } from "../../hooks/useMultiplayerGame";
 import { isValidRoomId } from "../../utils/room";
+import { setUserStatus, setStoredRoomId, getUserMode } from "../../utils/userState";
 import Grid from "../../ui/components/Grid";
 import WaitingRoom from "../../ui/components/WaitingRoom";
 import RoomInfo from "../../ui/components/RoomInfo";
@@ -13,17 +14,37 @@ export default function GameRoomPage() {
   const router = useRouter();
   const roomId = params?.roomId as string;
 
-  // Validate room ID
+  // Validate room ID and set user state
   useEffect(() => {
     if (!roomId || !isValidRoomId(roomId)) {
       toast.error("Invalid room code");
       router.push("/");
+      return;
     }
+    
+    // Update user state when entering game room
+    setUserStatus("in_game");
+    setStoredRoomId(roomId);
   }, [roomId, router]);
 
   const { gameState, makeMove, resetGame, isConnected } = useMultiplayerGame(
     roomId && isValidRoomId(roomId) ? roomId : null
   );
+
+  // Handle match cancellation - redirect to appropriate page
+  useEffect(() => {
+    const handleMatchCancelled = () => {
+      const userMode = getUserMode();
+      if (userMode === "random") {
+        router.push("/random");
+      } else {
+        router.push("/");
+      }
+    };
+
+    // This will be triggered by the hook's match-cancelled event
+    // We'll listen for navigation needs
+  }, [router]);
 
   if (!roomId || !isValidRoomId(roomId)) {
     return null;

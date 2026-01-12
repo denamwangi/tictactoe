@@ -282,3 +282,234 @@ Different browsers simultaneously
 Mobile and desktop mix
 Different network speeds
 Incognito mode testing
+
+## PHASE 3 - NEW PHASE. RANDOM OPPONENT.
+
+High-Level Feature & System Design Plan (No Code)
+
+1. Core Conceptual Model
+   One Game, Two Entry Paths
+
+Both flows ultimately converge into:
+
+A game room
+
+With two players
+
+Using shared Pusher logic
+
+Running the same game engine
+
+The only difference is how the room gets created.
+
+2. UI / Component Plan
+   A. Welcome Screen (New Entry Point)
+
+Purpose: Mode selection
+
+Elements:
+
+CTA 1: Play with Friend
+
+CTA 2: Play Random Opponent
+
+Responsibilities:
+
+Capture user intent
+
+Set initial user mode
+
+Route user into the correct pre-game flow
+
+B. Friend Play Flow (Existing, Slightly Refactored)
+
+Flow:
+
+User selects Play with Friend
+
+App generates or reuses invite link
+
+Friend joins via link
+
+Room already exists or is created on join
+
+Game starts
+
+Notes:
+
+This flow becomes a specialized room-creation path
+
+No waiting room
+
+Deterministic pairing
+
+C. Random Play Flow (New)
+Waiting Room Component
+
+Purpose: Hold users until matched
+
+UI State:
+
+“Awaiting opponent…”
+
+No game interaction yet
+
+Passive, listening state
+
+Exit Conditions:
+
+Matched with another user
+
+Game room assigned
+
+Game start signal received
+
+3. User State Model (Conceptual)
+
+Each connected user maintains:
+
+Mode
+
+friend
+
+random
+
+Status
+
+browsing / welcome
+
+waiting
+
+matched
+
+in_game
+
+disconnected
+
+Room Association
+
+none
+
+pending
+
+active room ID
+
+This state exists outside the UI, so refreshes or reconnects don’t break logic.
+
+4. Matchmaking Logic (Random Play)
+   Waiting Pool
+
+Maintain a shared pool of users who:
+
+Selected random
+
+Are in waiting status
+
+Are currently connected
+
+Matching Rules
+
+When a user enters the waiting pool:
+
+If another waiting user exists:
+
+Pair immediately
+
+Else:
+
+Remain waiting
+
+Role Assignment
+
+First user → Player 1
+
+Second user → Player 2
+
+Match Creation Steps (Conceptual)
+
+Remove both users from waiting pool
+
+Create a new game room
+
+Assign player roles
+
+Update both users’ status to matched
+
+Notify both users via Pusher
+
+Transition both clients into the game room
+
+Start game
+
+5. Shared Game Room Logic (Critical)
+
+Once a room exists, everything is identical regardless of entry path:
+
+Same room structure
+
+Same player roles
+
+Same Pusher channels
+
+Same game events
+
+Same win/loss handling
+
+This is the key architectural constraint:
+No game logic should care how players were matched.
+
+6. Real-Time / Pusher Strategy
+   Shared Infrastructure
+
+One set of Pusher channels per room
+
+Same event names across both flows
+
+Same client listeners
+
+Event Categories
+
+Presence / connection
+
+Match found
+
+Room joined
+
+Game start
+
+Game updates
+
+Disconnect / cleanup
+
+Why This Matters
+
+Cursor can implement everything once
+
+Fewer bugs
+
+Easier future modes (ranked, tournament, etc.)
+
+7. Cleanup & Edge Cases (High-Level)
+   Disconnects
+
+If a waiting user disconnects → remove from pool
+
+If a matched user disconnects before game start → dissolve match
+
+Refresh / Rejoin
+
+User state determines whether they:
+
+Return to waiting room
+
+Rejoin game room
+
+Restart at welcome screen
+
+8. Mental Model for Cursor (Important)
+
+You can summarize the entire system to Cursor as:
+
+“There is one game engine and one real-time layer.
+Friend play and random play are just two different ways of creating a room.
+Everything else is shared.”
