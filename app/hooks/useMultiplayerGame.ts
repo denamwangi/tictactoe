@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Board, Player, PlayerRole, RoomStatus, MultiplayerGameState } from "../types/game";
+import {
+  Board,
+  Player,
+  PlayerRole,
+  RoomStatus,
+  MultiplayerGameState,
+} from "../types/game";
 import { getGameStatus } from "../utils/gameLogic";
 import { usePusherChannel } from "./usePusherChannel";
 import toast from "react-hot-toast";
@@ -49,7 +55,8 @@ export function useMultiplayerGame(roomId: string | null) {
   const [currentPlayer, setCurrentPlayer] = useState<Player>(null);
   const gameStartedRef = useRef(false);
   const roleAssignedRef = useRef(false);
-  const triggerRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const triggerRef = useRef<((event: string, data: any) => void) | null>(null);
 
   const gameStatus = getGameStatus(board);
 
@@ -58,6 +65,7 @@ export function useMultiplayerGame(roomId: string | null) {
     if (roomId && !playerRole) {
       const stored = getStoredPlayerRole(roomId);
       if (stored) {
+        // Initialize from localStorage - this is intentional initialization
         setPlayerRole(stored);
         roleAssignedRef.current = true;
       }
@@ -65,66 +73,76 @@ export function useMultiplayerGame(roomId: string | null) {
   }, [roomId, playerRole]);
 
   // Initialize game when both players are present
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const initializeGame = useCallback((members: any, channelRef?: any, triggerFn?: any) => {
-    if (!roomId) return;
+      if (!roomId) return;
 
-    // Check if we already have a role from storage
-    if (playerRole && roleAssignedRef.current) {
-      // We have a role, just start the game
+      // Check if we already have a role from storage
+      if (playerRole && roleAssignedRef.current) {
+        // We have a role, just start the game
+        setRoomStatus("ready");
+        const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
+        setCurrentPlayer(startingPlayer);
+        if (triggerFn) {
+          triggerFn("game-start", { startingPlayer });
+        }
+        toast.success("Game starting!");
+        return;
+      }
+
+      // Assign roles: use member IDs to deterministically assign X and O
+      const memberIds = Object.keys(members?.members || {});
+      if (memberIds.length < 2) return; // Need 2 players
+
+      const sortedIds = memberIds.sort();
+
+      // Get our user ID from members.me or channel
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const myUserId =
+        (members?.me as any)?.id ||
+        (channelRef && "members" in channelRef
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ? (channelRef as any).members.me?.id
+          : null);
+
+      let newRole: PlayerRole;
+      if (!myUserId) {
+        // Fallback: assign randomly if we can't determine user ID
+        newRole = assignRandomRole();
+      } else {
+        // Assign based on sorted order: first gets X, second gets O
+        const myIndex = sortedIds.indexOf(myUserId);
+        newRole = myIndex === 0 ? "X" : "O";
+      }
+
+      if (!playerRole && !roleAssignedRef.current) {
+        setPlayerRole(newRole);
+        storePlayerRole(roomId, newRole);
+        roleAssignedRef.current = true;
+        if (triggerFn) {
+          triggerFn("player-role", { role: newRole });
+        }
+      }
+
       setRoomStatus("ready");
+
+      // Randomly decide who starts (only trigger once)
       const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
       setCurrentPlayer(startingPlayer);
+      // Set to playing immediately for the player who triggers (they don't always receive their own client event)
+      setRoomStatus("playing");
       if (triggerFn) {
         triggerFn("game-start", { startingPlayer });
       }
       toast.success("Game starting!");
-      return;
-    }
-
-    // Assign roles: use member IDs to deterministically assign X and O
-    const memberIds = Object.keys(members?.members || {});
-    if (memberIds.length < 2) return; // Need 2 players
-    
-    const sortedIds = memberIds.sort();
-    
-    // Get our user ID from members.me or channel
-    const myUserId = members?.me?.id || (channelRef && "members" in channelRef 
-      ? (channelRef as any).members.me?.id 
-      : null);
-    
-    let newRole: PlayerRole;
-    if (!myUserId) {
-      // Fallback: assign randomly if we can't determine user ID
-      newRole = assignRandomRole();
-    } else {
-      // Assign based on sorted order: first gets X, second gets O
-      const myIndex = sortedIds.indexOf(myUserId);
-      newRole = myIndex === 0 ? "X" : "O";
-    }
-    
-    if (!playerRole && !roleAssignedRef.current) {
-      setPlayerRole(newRole);
-      storePlayerRole(roomId, newRole);
-      roleAssignedRef.current = true;
-      if (triggerFn) {
-        triggerFn("player-role", { role: newRole });
-      }
-    }
-
-    setRoomStatus("ready");
-    
-    // Randomly decide who starts (only trigger once)
-    const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
-    setCurrentPlayer(startingPlayer);
-    if (triggerFn) {
-      triggerFn("game-start", { startingPlayer });
-    }
-    toast.success("Game starting!");
-  }, [roomId, playerRole]);
+    },
+    [roomId, playerRole]
+  );
 
   // Pusher channel setup
   const { channel, isConnected, bindEvent, trigger } = usePusherChannel({
     roomId,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onSubscriptionSucceeded: (members: any) => {
       // members.count is available in presence channels
       const count = members?.count || 0;
@@ -139,19 +157,23 @@ export function useMultiplayerGame(roomId: string | null) {
         }
       }
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onMemberAdded: (member: any, channelRef: any) => {
       // Get accurate count from the channel passed to callback
       const count = channelRef?.members?.count || 0;
       setPlayerCount(count);
-      
+
       if (count === 2) {
         setOpponentConnected(true);
-        
+
         // Only the first player to see count === 2 should initialize the game
         if (!gameStartedRef.current) {
           gameStartedRef.current = true;
           triggerRef.current = trigger;
-          setTimeout(() => initializeGame(channelRef.members, channelRef, trigger), 0);
+          setTimeout(
+            () => initializeGame(channelRef.members, channelRef, trigger),
+            0
+          );
         } else {
           // Second player just needs to wait for game-start event
           setRoomStatus("ready");
@@ -159,6 +181,7 @@ export function useMultiplayerGame(roomId: string | null) {
         }
       }
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onMemberRemoved: (member: any, channel: any) => {
       // Get accurate count from the channel passed to callback
       const count = channel?.members?.count || 0;
@@ -184,32 +207,38 @@ export function useMultiplayerGame(roomId: string | null) {
   useEffect(() => {
     if (!channel || !isConnected) return;
 
-    const unbindStart = bindEvent("client-game-start", (data: { startingPlayer: Player }) => {
-      if (data.startingPlayer) {
-        setCurrentPlayer(data.startingPlayer);
-        setRoomStatus("playing");
+    const unbindStart = bindEvent(
+      "client-game-start",
+      (data: { startingPlayer: Player }) => {
+        if (data.startingPlayer) {
+          setCurrentPlayer(data.startingPlayer);
+          setRoomStatus("playing");
+        }
       }
-    });
+    );
 
-    const unbindMove = bindEvent("client-move", (data: { row: number; col: number; player: Player }) => {
-      // Apply opponent's move
-      if (data.player !== playerRole) {
-        setBoard((prev) => {
-          const newBoard: Board = prev.map((r, rIdx) =>
-            r.map((cell, cIdx) =>
-              rIdx === data.row && cIdx === data.col ? data.player : cell
-            )
-          );
-          const newStatus = getGameStatus(newBoard);
-          if (newStatus.status === "won" || newStatus.status === "draw") {
-            setRoomStatus("finished");
-          }
-          return newBoard;
-        });
-        // Switch turn to current player
-        setCurrentPlayer(playerRole);
+    const unbindMove = bindEvent(
+      "client-move",
+      (data: { row: number; col: number; player: Player }) => {
+        // Apply opponent's move
+        if (data.player !== playerRole) {
+          setBoard((prev) => {
+            const newBoard: Board = prev.map((r, rIdx) =>
+              r.map((cell, cIdx) =>
+                rIdx === data.row && cIdx === data.col ? data.player : cell
+              )
+            );
+            const newStatus = getGameStatus(newBoard);
+            if (newStatus.status === "won" || newStatus.status === "draw") {
+              setRoomStatus("finished");
+            }
+            return newBoard;
+          });
+          // Switch turn to current player
+          setCurrentPlayer(playerRole);
+        }
       }
-    });
+    );
 
     const unbindReset = bindEvent("client-reset", () => {
       setBoard(createEmptyBoard());
@@ -230,16 +259,19 @@ export function useMultiplayerGame(roomId: string | null) {
   useEffect(() => {
     if (!channel || !isConnected) return;
 
-    const unbindRole = bindEvent("client-player-role", (data: { role: PlayerRole }) => {
-      if (!playerRole && data.role) {
-        // Only accept role if we don't have one yet
-        setPlayerRole(data.role);
-        if (roomId) {
-          storePlayerRole(roomId, data.role);
+    const unbindRole = bindEvent(
+      "client-player-role",
+      (data: { role: PlayerRole }) => {
+        if (!playerRole && data.role) {
+          // Only accept role if we don't have one yet
+          setPlayerRole(data.role);
+          if (roomId) {
+            storePlayerRole(roomId, data.role);
+          }
+          roleAssignedRef.current = true;
         }
-        roleAssignedRef.current = true;
       }
-    });
+    );
 
     return () => {
       unbindRole?.();
@@ -271,7 +303,9 @@ export function useMultiplayerGame(roomId: string | null) {
 
       // Make the move
       const newBoard: Board = board.map((r, rIdx) =>
-        r.map((cell, cIdx) => (rIdx === row && cIdx === col ? playerRole : cell))
+        r.map((cell, cIdx) =>
+          rIdx === row && cIdx === col ? playerRole : cell
+        )
       );
 
       setBoard(newBoard);
