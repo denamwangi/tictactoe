@@ -5,10 +5,9 @@ import type { Channel, PresenceChannel } from "pusher-js";
 
 interface UsePusherChannelOptions {
   roomId: string | null;
-  onMemberAdded?: (member: any) => void;
-  onMemberRemoved?: (member: any) => void;
+  onMemberAdded?: (member: any, channel: PresenceChannel) => void;
+  onMemberRemoved?: (member: any, channel: PresenceChannel) => void;
   onSubscriptionSucceeded?: (members: any) => void;
-  onEvent?: (eventName: string, data: any) => void;
 }
 
 export function usePusherChannel({
@@ -16,7 +15,6 @@ export function usePusherChannel({
   onMemberAdded,
   onMemberRemoved,
   onSubscriptionSucceeded,
-  onEvent,
 }: UsePusherChannelOptions) {
   const [channel, setChannel] = useState<Channel | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -59,11 +57,13 @@ export function usePusherChannel({
 
     // Handle member events (presence channel)
     const handleMemberAdded = (member: any) => {
-      onMemberAdded?.(member);
+      // Pass both the member and the channel so we can get accurate count
+      onMemberAdded?.(member, newChannel);
     };
 
     const handleMemberRemoved = (member: any) => {
-      onMemberRemoved?.(member);
+      // Pass both the member and the channel so we can get accurate count
+      onMemberRemoved?.(member, newChannel);
     };
 
     newChannel.bind("pusher:subscription_succeeded", handleSubscriptionSucceeded);

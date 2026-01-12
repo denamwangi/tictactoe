@@ -47,7 +47,9 @@ export function useMultiplayerGame(roomId: string | null) {
   const [playerCount, setPlayerCount] = useState(0);
   const [opponentConnected, setOpponentConnected] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(null);
-  const hasJoinedRef = useRef(false);
+  const gameStartedRef = useRef(false);
+  const roleAssignedRef = useRef(false);
+  const triggerRef = useRef<any>(null);
 
   const gameStatus = getGameStatus(board);
 
@@ -57,8 +59,67 @@ export function useMultiplayerGame(roomId: string | null) {
       const stored = getStoredPlayerRole(roomId);
       if (stored) {
         setPlayerRole(stored);
+        roleAssignedRef.current = true;
       }
     }
+  }, [roomId, playerRole]);
+
+  // Initialize game when both players are present
+  const initializeGame = useCallback((members: any, channelRef?: any, triggerFn?: any) => {
+    if (!roomId) return;
+
+    // Check if we already have a role from storage
+    if (playerRole && roleAssignedRef.current) {
+      // We have a role, just start the game
+      setRoomStatus("ready");
+      const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
+      setCurrentPlayer(startingPlayer);
+      if (triggerFn) {
+        triggerFn("game-start", { startingPlayer });
+      }
+      toast.success("Game starting!");
+      return;
+    }
+
+    // Assign roles: use member IDs to deterministically assign X and O
+    const memberIds = Object.keys(members?.members || {});
+    if (memberIds.length < 2) return; // Need 2 players
+    
+    const sortedIds = memberIds.sort();
+    
+    // Get our user ID from members.me or channel
+    const myUserId = members?.me?.id || (channelRef && "members" in channelRef 
+      ? (channelRef as any).members.me?.id 
+      : null);
+    
+    let newRole: PlayerRole;
+    if (!myUserId) {
+      // Fallback: assign randomly if we can't determine user ID
+      newRole = assignRandomRole();
+    } else {
+      // Assign based on sorted order: first gets X, second gets O
+      const myIndex = sortedIds.indexOf(myUserId);
+      newRole = myIndex === 0 ? "X" : "O";
+    }
+    
+    if (!playerRole && !roleAssignedRef.current) {
+      setPlayerRole(newRole);
+      storePlayerRole(roomId, newRole);
+      roleAssignedRef.current = true;
+      if (triggerFn) {
+        triggerFn("player-role", { role: newRole });
+      }
+    }
+
+    setRoomStatus("ready");
+    
+    // Randomly decide who starts (only trigger once)
+    const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
+    setCurrentPlayer(startingPlayer);
+    if (triggerFn) {
+      triggerFn("game-start", { startingPlayer });
+    }
+    toast.success("Game starting!");
   }, [roomId, playerRole]);
 
   // Pusher channel setup
@@ -70,43 +131,42 @@ export function useMultiplayerGame(roomId: string | null) {
       setPlayerCount(count);
       if (count === 2) {
         setOpponentConnected(true);
+        // If both players are already present when we subscribe, start the game
+        if (!gameStartedRef.current) {
+          gameStartedRef.current = true;
+          triggerRef.current = trigger;
+          setTimeout(() => initializeGame(members, channel, trigger), 0);
+        }
       }
     },
-    onMemberAdded: (member: any) => {
-      // Use the channel reference to get current count
-      const count = channel && "members" in channel ? (channel as any).members.count : 0;
+    onMemberAdded: (member: any, channelRef: any) => {
+      // Get accurate count from the channel passed to callback
+      const count = channelRef?.members?.count || 0;
       setPlayerCount(count);
       
-      if (count === 2 && !hasJoinedRef.current) {
-        hasJoinedRef.current = true;
-        // Both players present - assign roles if not already assigned
-        if (!playerRole) {
-          const newRole = assignRandomRole();
-          setPlayerRole(newRole);
-          if (roomId) {
-            storePlayerRole(roomId, newRole);
-          }
-          // Announce role assignment
-          trigger("player-role", { role: newRole });
-        }
-        setRoomStatus("ready");
-        // Randomly decide who starts
-        const startingPlayer: Player = Math.random() < 0.5 ? "X" : "O";
-        setCurrentPlayer(startingPlayer);
-        trigger("game-start", { startingPlayer });
-        toast.success("Game starting!");
-      } else if (count === 2) {
+      if (count === 2) {
         setOpponentConnected(true);
-        setRoomStatus("ready");
-        toast.success("Opponent joined!");
+        
+        // Only the first player to see count === 2 should initialize the game
+        if (!gameStartedRef.current) {
+          gameStartedRef.current = true;
+          triggerRef.current = trigger;
+          setTimeout(() => initializeGame(channelRef.members, channelRef, trigger), 0);
+        } else {
+          // Second player just needs to wait for game-start event
+          setRoomStatus("ready");
+          toast.success("Opponent joined!");
+        }
       }
     },
-    onMemberRemoved: (member: any) => {
-      // Use the channel reference to get current count
-      const count = channel && "members" in channel ? (channel as any).members.count : 0;
+    onMemberRemoved: (member: any, channel: any) => {
+      // Get accurate count from the channel passed to callback
+      const count = channel?.members?.count || 0;
       setPlayerCount(count);
       if (count < 2) {
         setOpponentConnected(false);
+        gameStartedRef.current = false;
+        roleAssignedRef.current = false;
         if (roomStatus === "playing" || roomStatus === "ready") {
           setRoomStatus("waiting");
           toast.error("Opponent disconnected");
@@ -114,6 +174,11 @@ export function useMultiplayerGame(roomId: string | null) {
       }
     },
   });
+
+  // Update trigger ref when trigger changes
+  useEffect(() => {
+    triggerRef.current = trigger;
+  }, [trigger]);
 
   // Listen for game start event
   useEffect(() => {
@@ -161,21 +226,25 @@ export function useMultiplayerGame(roomId: string | null) {
     };
   }, [channel, isConnected, playerRole, bindEvent, trigger, roomStatus]);
 
-  // Join room when connected
+  // Handle role assignment from other player
   useEffect(() => {
-    if (isConnected && channel && !hasJoinedRef.current) {
-      const count = channel && "members" in channel ? (channel as any).members.count : 0;
-      if (count === 2 && !playerRole) {
-        // Wait for role assignment from first player or assign randomly
-        const newRole = assignRandomRole();
-        setPlayerRole(newRole);
+    if (!channel || !isConnected) return;
+
+    const unbindRole = bindEvent("client-player-role", (data: { role: PlayerRole }) => {
+      if (!playerRole && data.role) {
+        // Only accept role if we don't have one yet
+        setPlayerRole(data.role);
         if (roomId) {
-          storePlayerRole(roomId, newRole);
+          storePlayerRole(roomId, data.role);
         }
-        trigger("player-role", { role: newRole });
+        roleAssignedRef.current = true;
       }
-    }
-  }, [isConnected, channel, playerRole, roomId, trigger]);
+    });
+
+    return () => {
+      unbindRole?.();
+    };
+  }, [channel, isConnected, playerRole, roomId, bindEvent]);
 
   const makeMove = useCallback(
     (row: number, col: number) => {
