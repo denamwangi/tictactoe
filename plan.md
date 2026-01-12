@@ -1,147 +1,284 @@
-🎯 PROJECT OVERVIEWEnd Goal: Web-based 2-player Tic-Tac-Toe with room-based matchmaking, deployed on VercelKey Constraint: Build incrementally (local → online) to validate core mechanics before adding complexity🏗️ ARCHITECTURE DECISIONSFrontend Stack
+📦 STEP 2.1: PUSHER ACCOUNT & PROJECT SETUP
+Manual Setup (You Do This First)
 
-Framework: Next.js 14+ (App Router)
-Language: TypeScript (type safety for game state)
-Styling: Tailwind CSS (rapid UI development)
-State Management: React hooks for local state, context for shared game state
-Backend/Real-Time
+Create Pusher Account
 
-V1: None (client-only)
-V2 Options:
+Sign up at pusher.com
+Create new Channels app (not Beams)
+Name it "tic-tac-toe"
+Choose cluster closest to your users
 
-Pusher (simplest, free tier, no server management)
-Socket.io + Vercel serverless functions (more control)
-Supabase Realtime (adds database for game history)
+Configure App Settings
 
-Deployment
+Enable "Client Events" in dashboard (critical for player-to-player messaging)
+Copy your credentials (app_id, key, secret, cluster)
 
-Platform: Vercel (zero-config Next.js hosting)
-CI/CD: Git-based (push to deploy)
-📋 PHASE 1: LOCAL GAME FOUNDATION (V1)Goal: Prove game mechanics work before tackling multiplayer complexityCore Components to Build
+Environment Setup
 
-Game State Manager
+Install pusher and pusher-js packages
+Create environment variables file
+Store Pusher credentials securely
+Add public keys for client-side access
 
-9-cell board array
-Current player tracker (X/O toggle)
-Game status (playing/won/draw)
-Move history (optional for undo)
+🔧 STEP 2.2: PUSHER INTEGRATION LAYER
+What to Build:
+Server-Side Pusher Instance
 
-Game Logic Engine
+Configuration file for server operations
+Uses private credentials
+For triggering events from backend (if needed later)
 
-Move validation (cell empty? game over?)
-Win detection (8 possible lines: 3 rows, 3 columns, 2 diagonals)
-Draw detection (board full + no winner)
-Turn switching logic
+Client-Side Pusher Instance
 
-UI Components
+Configuration file for browser operations
+Uses public credentials only
+Connects users to real-time channels
 
-Grid renderer (3×3 layout)
-Individual cells (clickable, shows X/O)
-Status display (whose turn, winner announcement)
-Reset button
+React Hook for Channel Management
 
-User Flow
+Subscribe to channels when entering rooms
+Unsubscribe when leaving
+Handle connection lifecycle automatically
+Return channel object for event binding
 
-Load page → game starts immediately
-Player 1 (X) clicks cell → board updates
-Player 2 (O) clicks cell → repeat
-Game detects win/draw → show result + reset option
-Success Criteria
+🏠 STEP 2.3: ROOM SYSTEM & ROUTING
+What to Build:
+Room Utilities
 
-Can play full game on single device
-All 8 win conditions detected correctly
-Draw scenario works
-Can reset and play again
-Deployed to Vercel with shareable URL
-Cursor Prompts Strategy
-Feed Cursor these steps sequentially:
+Function to generate unique room IDs (short, shareable codes)
+Function to construct channel names from room IDs
+Function to create shareable room URLs
+Helper for getting current room from URL
 
-"Set up Next.js project with TypeScript and Tailwind"
-"Create TypeScript types for game state"
-"Build win detection function with all 8 combinations"
-"Create React hook to manage game state and moves"
-"Build grid UI component"
-"Connect UI to game logic"
-"Add status display and reset functionality"
-📋 PHASE 2: MULTIPLAYER TRANSFORMATION (V2)Goal: Convert local game to online room-based multiplayerNew Components to Add
-Room Management System
+Type System Updates
 
-Room ID generation (unique 6-8 character codes)
-Room state tracking (waiting/full/playing)
-Player assignment (who is X, who is O)
-Player count enforcement (max 2)
+Add PlayerRole type (which player you are: X or O)
+Add RoomStatus type (waiting, ready, playing, finished)
+Extend GameState to include multiplayer context
+Add player count tracking
+Add opponent connection status
 
-Real-Time Communication Layer
+Routing Structure
 
-Broadcast moves to both players
-Sync game state across clients
-Handle player connections/disconnections
-Room presence detection
+Dynamic route for game rooms: /game/[roomId]
+Extract room ID from URL parameters
+Validate room ID format
+Handle invalid room IDs gracefully
 
-Lobby/Matchmaking UI
+Lobby Page
 
-Home page with "Create Game" button
-Room creation → shareable link generation
-Join flow (paste link or enter code)
-Waiting room ("Waiting for opponent...")
-Auto-start when player 2 joins
+Transform home page into game launcher
+"Create New Game" - generates room and navigates
+"Join Game" - input for room code + validation
+Remove old single-player game from home
 
-Enhanced Game State
+🎮 STEP 2.4: MULTIPLAYER GAME STATE MANAGEMENT
+What to Build:
+Enhanced Game State Hook
+This is your core multiplayer brain that handles:
+State Management:
 
-Track which player you are (X or O)
-Disable moves when it's not your turn
-Handle opponent disconnection
-Rematch functionality
+All original game state (board, current player, winner, etc.)
+Which player you are (X or O)
+Room status tracking
+Player count (how many in room)
+Opponent connection status
 
-User Flow
+Pusher Event Handling:
 
-Player 1 clicks "Create Game" → gets room link
-Player 1 shares link with Player 2
-Player 2 clicks link → joins room
-Game auto-starts, assigns X/O randomly
-Players alternate moves in real-time
-Winner/draw detected → option to rematch
-Technical Decisions NeededReal-Time Strategy (Pick One):OptionProsConsBest ForPusherNo backend needed, free tier, simpleExternal dependencyQuick MVPSocket.ioFull control, establishedNeed custom server/functionsLong-term productSupabaseAdds database, auth-readyHeavier stackFuture expansionRecommendation: Start with Pusher (fastest path to working multiplayer)State Synchronization Pattern
+Listen for player joining events
+Listen for move events from opponent
+Listen for game reset events
+Track connection/disconnection events
+Handle initial room subscription
 
-Source of Truth: First player to join becomes "room host"
-Move Broadcasting: Player makes move → sends to channel → opponent receives → both update
-Conflict Resolution: Server timestamp or turn validation prevents double-moves
-Edge Cases to Handle
+Game Logic:
 
-Player refreshes page mid-game
-Player closes tab (opponent should see "Player disconnected")
-Both players try to move simultaneously
-Room link shared with 3+ people (reject excess joins)
-Success Criteria
+Validate it's your turn before allowing moves
+Update local state immediately
+Broadcast your moves to opponent
+Apply opponent's moves when received
+Check win/draw conditions after each move
+Assign player roles when joining (first = X, second = O)
+Switch turns after valid moves
 
-Can create room and get shareable link
-Second player can join via link
-Game starts automatically when both present
-Moves sync in real-time
-Turn enforcement works (can't move out of turn)
-Handles disconnections gracefully
-Deployed and playable across different devices
-Cursor Prompts Strategy
+Room Management:
 
-"Add room ID generation and routing"
-"Create lobby page with room creation"
-"Set up Pusher/Socket.io integration"
-"Build room joining flow"
-"Add real-time move broadcasting"
-"Implement player assignment logic"
-"Add waiting room UI"
-"Handle edge cases (disconnects, full rooms)"
-🚀 DEPLOYMENT CHECKLISTV1 Deployment
+Join room function (announces presence)
+Leave room function (cleanup)
+Reset game function (syncs with opponent)
+Handle room capacity (max 2 players)
 
-Push to GitHub repository
-Connect repo to Vercel
-Verify build succeeds
-Test deployed URL on mobile/desktop
-Share with friend to validate gameplay
-V2 Deployment
+Turn Enforcement:
 
-Add environment variables (API keys) to Vercel
-Update build settings if using custom server
-Test room creation and joining in production
-Verify real-time sync works across networks
-Load test (create multiple rooms)
+Block moves when not your turn
+Validate moves client-side
+Prevent cheating through role verification
+
+🎨 STEP 2.5: MULTIPLAYER UI COMPONENTS
+What to Build:
+Waiting Room Component
+
+Display while waiting for second player
+Show room code prominently
+Copy room link button
+Loading animation
+Instructions for sharing
+
+Enhanced Game Status Component
+
+Show waiting state
+Show whose turn it is (you vs opponent)
+Indicate which player you are (X or O)
+Show win/loss/draw with your perspective
+Reset button (when appropriate)
+Visual turn indicator
+
+Enhanced Board Component
+
+Disable interaction when not your turn
+Visual feedback for whose turn
+Show cursor states (allowed vs not allowed)
+Keep all existing cell rendering
+Highlight on hover only when your turn
+
+Room Info Component
+
+Display room code
+Show your player assignment (X or O)
+Opponent connection status
+Copy link button
+Leave game button
+Compact design for top of screen
+
+🔗 STEP 2.6: WIRE UP GAME ROOM PAGE
+What to Build:
+Complete Game Room Page
+Orchestrates all multiplayer components:
+Page Flow:
+
+Extract room ID from URL
+Initialize multiplayer game hook
+Auto-join room on mount
+Show waiting room until opponent arrives
+Switch to game board when both players ready
+Display all relevant components in correct layout
+
+Component Integration:
+
+Room info at top
+Game status below
+Board in center
+Pass correct props to all components
+Handle all user actions (moves, reset, leave)
+
+State Display:
+
+Loading state while connecting
+Waiting state (one player)
+Playing state (two players)
+Finished state (game over)
+
+🛡️ STEP 2.7: EDGE CASE HANDLING
+What to Build:
+Disconnection Handling
+
+Detect when opponent disconnects
+Show overlay or message
+Option to wait or leave
+Resume game if opponent reconnects
+Handle page refresh scenarios
+
+Room Capacity Management
+
+Prevent third player from joining
+Show "room full" message
+Provide navigation back to lobby
+Check player count before role assignment
+
+Disconnected Overlay Component
+
+Modal that appears over game
+Show disconnect message
+Offer "wait" or "leave" options
+Semi-transparent backdrop
+Clear call-to-action buttons
+
+Session Recovery
+
+Try to restore player role on refresh
+Use browser storage for session persistence
+Handle cases where role is lost
+Graceful degradation if restore fails
+
+✨ STEP 2.8: UX POLISH
+What to Add:
+Toast Notifications
+
+Install toast library
+"Opponent joined!" message
+"Opponent left" message
+"Link copied!" confirmation
+"Invalid move" feedback
+Position and timing configuration
+
+Animations & Transitions
+
+Fade in opponent's moves
+Pulse effect on your turn
+Smooth state transitions
+Loading spinners
+Cell click animations
+Component enter/exit animations
+
+Move History (Optional)
+
+Scrollable log of all moves
+Show who moved where
+Timestamp each move
+Helps players review game
+Collapsible sidebar or panel
+
+🧪 STEP 2.9: TESTING & DEBUGGING
+What to Add:
+Debugging Infrastructure
+
+Console logging for events
+Event data inspection
+State change tracking
+Connection status logging
+Error boundaries
+
+Error Handling
+
+Try-catch around Pusher operations
+Graceful fallbacks
+User-friendly error messages
+Automatic retry logic
+Connection quality indicators
+
+Testing Scenarios to Verify:
+Happy Path Tests:
+
+Create and join room flow
+Player assignment (X and O)
+Real-time move synchronization
+Win detection across clients
+Draw detection across clients
+Reset synchronization
+
+Edge Case Tests:
+
+Third player attempts to join
+Mid-game page refresh
+Player disconnection
+Simultaneous move attempts
+Out-of-turn move attempts
+Network interruption recovery
+
+Cross-Browser/Device Tests:
+
+Different browsers simultaneously
+Mobile and desktop mix
+Different network speeds
+Incognito mode testing

@@ -1,66 +1,78 @@
 "use client";
-import Grid from "./ui/components/Grid";
-import { useGameState } from "./hooks/useGameState";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { generateRoomId, isValidRoomId } from "./utils/room";
+import toast from "react-hot-toast";
 
 export default function Home() {
-  const { gameState, scores, makeMove, resetGame, resetScores } =
-    useGameState();
+  const router = useRouter();
+  const [joinRoomId, setJoinRoomId] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
 
-  const getStatusMessage = () => {
-    if (gameState.status === "won") {
-      return `Player ${gameState.winner} wins!`;
+  const handleCreateGame = () => {
+    setIsCreating(true);
+    const roomId = generateRoomId();
+    router.push(`/game/${roomId}`);
+  };
+
+  const handleJoinGame = () => {
+    const trimmed = joinRoomId.trim().toUpperCase();
+    if (!isValidRoomId(trimmed)) {
+      toast.error("Invalid room code. Must be 6 characters (A-Z, 0-9)");
+      return;
     }
-    if (gameState.status === "draw") {
-      return "It's a draw!";
-    }
-    return `Player ${gameState.currentPlayer}'s turn`;
+    router.push(`/game/${trimmed}`);
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-6 p-4">
-      {/* Status Display */}
-      <div className="text-2xl font-bold text-gray-800">
-        {getStatusMessage()}
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-8 p-4">
+      <div className="text-center">
+        <h1 className="text-5xl font-bold text-gray-800 mb-2">Tic Tac Toe</h1>
+        <p className="text-gray-600">Play with a friend online</p>
       </div>
 
-      {/* Game Grid */}
-      <Grid
-        board={gameState.board}
-        winningCells={gameState.winningCells}
-        gameStatus={gameState.status}
-        onCellClick={makeMove}
-      />
-
-      {/* Score Display */}
-      <div className="flex gap-8 text-lg">
-        <div className="text-center">
-          <div className="font-semibold text-blue-600">Player X</div>
-          <div className="text-2xl font-bold">{scores.X}</div>
-        </div>
-        <div className="text-center">
-          <div className="font-semibold text-gray-600">Draws</div>
-          <div className="text-2xl font-bold">{scores.draws}</div>
-        </div>
-        <div className="text-center">
-          <div className="font-semibold text-red-600">Player O</div>
-          <div className="text-2xl font-bold">{scores.O}</div>
-        </div>
-      </div>
-
-      {/* Reset Button */}
-      <div className="flex gap-4">
+      <div className="flex flex-col gap-6 w-full max-w-md">
+        {/* Create Game Button */}
         <button
-          onClick={resetGame}
-          className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
+          onClick={handleCreateGame}
+          disabled={isCreating}
+          className="px-8 py-4 bg-blue-600 text-white font-semibold text-lg rounded-lg hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          New Game
+          {isCreating ? "Creating..." : "Create New Game"}
         </button>
-        <button
-          onClick={resetScores}
-          className="px-6 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 active:scale-95 transition-all"
-        >
-          Reset Scores
-        </button>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white text-gray-500">OR</span>
+          </div>
+        </div>
+
+        {/* Join Game Section */}
+        <div className="flex flex-col gap-3">
+          <input
+            type="text"
+            value={joinRoomId}
+            onChange={(e) => setJoinRoomId(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleJoinGame();
+              }
+            }}
+            placeholder="Enter room code"
+            maxLength={6}
+            className="px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-lg font-mono uppercase focus:outline-none focus:border-blue-500"
+          />
+          <button
+            onClick={handleJoinGame}
+            disabled={!joinRoomId.trim()}
+            className="px-8 py-4 bg-green-600 text-white font-semibold text-lg rounded-lg hover:bg-green-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Join Game
+          </button>
+        </div>
       </div>
     </div>
   );

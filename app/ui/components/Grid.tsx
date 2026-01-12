@@ -5,6 +5,8 @@ interface GridProps {
   winningCells: number[];
   gameStatus: "playing" | "won" | "draw";
   onCellClick: (row: number, col: number) => void;
+  isYourTurn?: boolean;
+  disabled?: boolean;
 }
 
 export default function Grid({
@@ -12,8 +14,11 @@ export default function Grid({
   winningCells,
   gameStatus,
   onCellClick,
+  isYourTurn = true,
+  disabled = false,
 }: GridProps) {
   const isGameOver = gameStatus !== "playing";
+  const cellDisabled = disabled || isGameOver || !isYourTurn;
 
   const getCellColor = (cell: string | null) => {
     if (cell === "X") return "text-blue-600";
@@ -27,23 +32,23 @@ export default function Grid({
         row.map((cell, cellIndex) => {
           const flatIndex = rowIndex * 3 + cellIndex;
           const winning = winningCells.includes(flatIndex);
-          const disabled = isGameOver || cell !== null;
+          const cellIsDisabled = cellDisabled || cell !== null;
 
           return (
             <button
               key={`${rowIndex}-${cellIndex}`}
               onClick={() => onCellClick(rowIndex, cellIndex)}
-              disabled={disabled}
+              disabled={cellIsDisabled}
               className={`
                 bg-white border-2 aspect-square flex items-center justify-center 
                 text-4xl font-bold w-full h-full transition-all
                 ${winning ? "bg-green-100 border-green-500" : "border-gray-300"}
                 ${
-                  disabled
+                  cellIsDisabled
                     ? "cursor-not-allowed opacity-60"
                     : "cursor-pointer hover:bg-gray-50"
                 }
-                ${!disabled ? "active:scale-95" : ""}
+                ${!cellIsDisabled ? "active:scale-95" : ""}
                 ${getCellColor(cell)}
               `}
             >
